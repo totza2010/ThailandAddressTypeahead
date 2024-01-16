@@ -8,31 +8,39 @@
 * @dependencies: jQuery <https://jquery.com/>
 *                typeahead.js <https://github.com/corejavascript/typeahead.js>
 **/
+// Define a class for handling Thailand address data
 class ThailandAddress {
-    constructor() {
+    constructor(options) {
+        // Initialize an empty array to store address data
+        this.options = options;
         this.db = [];
     }
 
+    // Method to load data into the class
     loadData = (data) => {
         // Assume data format is already in the provided structure
         this.db = data;
-        console.log("Loaded Data:", this.db);
         return this;
     };
 
+    // Method to build a query instance for address data
     buildQueryInstance = () => new Query(this.mapStrings());
 
+    // Method to map strings from the loaded data
     mapStrings = () => {
         let resultArray = this.db.flatMap(province => 
             province.amphure.flatMap(amphure => 
                 amphure.tambon.map(tambon => ({
                     'tambon_id': tambon.id,
+                    'tambon': tambon[`name_${this.options.lang}`],
                     'tambon_th': tambon.name_th,
                     'tambon_en': tambon.name_en,
                     'amphure_id': amphure.id,
+                    'amphure': amphure[`name_${this.options.lang}`],
                     'amphure_th': amphure.name_th,
                     'amphure_en': amphure.name_en,
                     'province_id': province.id,
+                    'province': province[`name_${this.options.lang}`],
                     'province_th': province.name_th,
                     'province_en': province.name_en,
                     'zipcode': tambon.zip_code
@@ -40,23 +48,27 @@ class ThailandAddress {
             )
         );
 
-        console.log("Mapped Strings:", resultArray);
         return resultArray;
     };
 
+    // Method to execute the query instance and set it to the global object
     execute = () => {
         const queryInstance = this.buildQueryInstance();
         $.Address.DB = queryInstance;
-        console.log("Query Instance:", queryInstance);
         return queryInstance;
     };
 }
 
-$.Address = e => {
+// Create a global object for handling addresses
+$.Address = options => {
     "use strict";
-    e = $.extend({}, $.Address.defaults, e);
 
+    // Extend the provided settings with default settings
+    options = $.extend({}, $.Address.defaults, options);
+
+    // Function to calculate string similarity
     const stringSimilarity = (str1, str2, isPercentage) => {
+        // Implementation of string similarity calculation
         str1 = str1.toString();
         str2 = str2.toString();
         let maxLength = 0,
@@ -85,43 +97,53 @@ $.Address = e => {
         return isPercentage ? Math.floor(similarity * 100) : similarity;
     };
 
-    !function (a) {
-        const addressDB = new ThailandAddress();
-        $.getJSON(e.database)
+    // Main function for handling address data
+    !function (callback) {
+        // Create an instance of the ThailandAddress class
+        const addressDB = new ThailandAddress(options);
+
+        // Load data asynchronously from the provided JSON file
+        $.getJSON(options.database)
             .done((response) => {
-                a(addressDB.loadData(response).execute());
+                callback(addressDB.loadData(response).execute());
             })
             .fail((error) => {
-                console.error(`Error loading data from "${e.database}":`, error);
-                throw new Error(`File "${e.database}" does not exist.`);
+                // Handle errors during data loading
+                console.error(`Error loading data from "${options.database}":`, error);
+                throw new Error(`File "${options.database}" does not exist.`);
             });
-    }(t => {
-        $.Address.DB = t;
-        let n, i, o = {
+    }(DB => {
+        // Set the address query instance to the global object
+        $.Address.DB = DB;
+        let n, key, defaultTemplates = {
             empty: " ",
             suggestion: entry => {
-                let tambon = entry[`tambon_${e.lang}`];
-                let amphure = entry[`amphure_${e.lang}`];
-                let province = entry[`province_${e.lang}`];
+                // Format the suggestion entry for display
+                let tambon = entry.tambon;
+                let amphure = entry.amphure;
+                let province = entry.province;
                 let zipcode = entry.zipcode;
                 return `<div>${tambon} » ${amphure} » ${province} » ${zipcode}</div>`;
             },
         };
-        
-        for (let n in e) {
-            if (n.includes("$") && "$search" !== n && e.hasOwnProperty(n) && e[n] && e[n].typeahead) {
-                e[n].typeahead({
+        var templates = typeof options.templates === 'object' ? Object.assign(defaultTemplates, options.templates) : defaultTemplates
+        // Iterate over provided settings for typeahead functionality
+        for (let n in options) {
+            if (n.includes("$") && "$search" !== n && options.hasOwnProperty(n) && options[n] && options[n].typeahead) {
+                // Initialize typeahead for each specified field
+                options[n].typeahead({
                     hint: true,
                     highlight: true,
                     minLength: 1,
                 }, {
-                    limit: e.autocomplete_size,
-                    templates: o,
+                    limit: options.autocomplete_size,
+                    templates: templates,
                     source: function (query, callback) {
+                        // Fetch results based on the query
                         let results = [];
                         let field = this.$el.data("field");
                         try {
-                            results = t.select("*").where(field).match(`^${query}`).orderBy(field).fetch();
+                            results = DB.select("*").where(field).match(`^${query}`).orderBy(field).fetch();
                         } catch (error) {}
                         callback(results);
                     },
@@ -132,31 +154,34 @@ $.Address = e => {
                 }).parent().find(".tt-dataset").data("field", n.replace("$", ""));
             }
         }
-        
-        e.$search && e.$search.typeahead({
-            hint: !0,
-            highlight: !0,
+
+        // Configure typeahead for search functionality
+        options.$search && options.$search.typeahead({
+            hint: true,
+            highlight: true,
             minLength: 2,
         }, {
-            limit: e.autocomplete_size,
-            templates: o,
+            limit: options.autocomplete_size,
+            templates: templates,
             source: function (query, callback) {
+                // Fetch results for search based on the query
                 let results = [];
                 try {
                     results = [
-                        ...t.select("*").where("zipcode").match(query).fetch(),
-                        ...t.select("*").where(`province_${e.lang}`).match(query).fetch(),
-                        ...t.select("*").where(`amphure_${e.lang}`).match(query).fetch(),
-                        ...t.select("*").where(`tambon_${e.lang}`).match(query).fetch(),
+                        ...DB.select("*").where("zipcode").match(query).fetch(),
+                        ...DB.select("*").where(`province_${options.lang}`).match(query).fetch(),
+                        ...DB.select("*").where(`amphure_${options.lang}`).match(query).fetch(),
+                        ...DB.select("*").where(`tambon_${options.lang}`).match(query).fetch(),
                     ]
                         .map(entry => JSON.stringify(entry))
                         .filter((entry, index, self) => self.indexOf(entry) === index)
                         .map(entry => {
+                            // Calculate likelihood for each result
                             entry = JSON.parse(entry);
                             entry.likely = [
-                                5 * stringSimilarity(query, entry[`tambon_${e.lang}`]),
-                                3 * stringSimilarity(query, entry[`amphure_${e.lang}`].replace(/^เมือง/, "")),
-                                stringSimilarity(query, entry[`province_${e.lang}`]),
+                                5 * stringSimilarity(query, entry[`tambon_${options.lang}`]),
+                                3 * stringSimilarity(query, entry[`amphure_${options.lang}`].replace(/^เมือง/, "")),
+                                stringSimilarity(query, entry[`province_${options.lang}`]),
                                 stringSimilarity(query, entry.zipcode),
                             ].reduce((max, value) => Math.max(max, value), 0);
                             return entry;
@@ -167,46 +192,63 @@ $.Address = e => {
             },
             display: () => "",
         });
-        for (n in e) n.includes("$") && e.hasOwnProperty(n) && e[n] && e[n].bind("typeahead:select typeahead:autocomplete", function (t, a) {
-            for (n in e) i = n.replace("$", ""), n.includes("$") && e.hasOwnProperty(n) && e[n] && a[i] && e[n].typeahead("val", a[i]).trigger("change");
-            "function" == typeof e.onDataFill && (delete a.likely, e.onDataFill(a));
+
+        // Bind typeahead select and autocomplete events
+        for (n in options) n.includes("$") && options.hasOwnProperty(n) && options[n] && options[n].bind("typeahead:select typeahead:autocomplete", function (t, a) {
+            // Update other fields on selection
+            for (n in options) key = n.replace("$", ""), n.includes("$") && options.hasOwnProperty(n) && options[n] && a[key] && options[n].typeahead("val", a[key]).trigger("change");
+            // Callback on data fill
+            "function" == typeof options.onDataFill && (delete a.likely, options.onDataFill(a));
         }).blur(function () {
+            // Clear suggestions if no value entered
             this.value || $(this).parent().find(".tt-dataset").html("");
         });
 
-        "function" == typeof e.onLoad && e.onLoad();
-        "function" == typeof e.onComplete && e.onComplete();
+        // Execute onLoad and onComplete callbacks if provided
+        "function" == typeof options.onLoad && options.onLoad();
+        "function" == typeof options.onComplete && options.onComplete();
     });
-}, $.Address.defaults = {
+};
+
+// Default settings for the Thailand address typeahead
+$.Address.defaults = {
     database: "https://raw.githubusercontent.com/kongvut/thai-province-data/master/api_province_with_amphure_tambon.json",
     autocomplete_size: 20,
     onLoad: function() {},
     onDataFill: function() {},
-    $tambon_th: !1,
-    $tambon_en: !1,
-    $tambon_id: !1,
-    $amphure_th: !1,
-    $amphure_en: !1,
-    $amphure_id: !1,
-    $province_th: !1,
-    $province_en: !1,
-    $province_id: !1,
-    $zipcode: !1,
-    $search: !1,
-    lang: "en"
-}, $.Address.setup = e => $.extend($.Address.defaults, e);
+    $tambon_th: false,
+    $tambon_en: false,
+    $tambon_id: false,
+    $amphure_th: false,
+    $amphure_en: false,
+    $amphure_id: false,
+    $province_th: false,
+    $province_en: false,
+    $province_id: false,
+    $zipcode: false,
+    $search: false,
+    lang: "th"
+};
 
+// Setup function to configure default settings
+$.Address.setup = options => $.extend($.Address.defaults, options);
+
+// Define a class for building and executing queries
 class Query {
     constructor(t) {
+        // Parse the data source into an object
         if (typeof t === 'string') {
             t = JSON.parse(t);
         }
+
+        // Initialize the query object with data source and options
         this.data_source = t;
         this.buffer = t;
         this.focused_field = "";
         this.options = [];
         this.size = false;
 
+        // Extract available options from the data source
         for (let i in t) {
             for (let s in t[i]) {
                 this.options.push(s);
@@ -215,6 +257,7 @@ class Query {
         }
     }
 
+    // Method to fetch and filter data based on query parameters
     fetch = () => {
         if ("object" == typeof this.options) {
             let t = {};
@@ -246,15 +289,18 @@ class Query {
         return this.buffer;
     }
 
+    // Method to set a new data source for the query
     new = (t) => {
         this.data_source = t;
         this.buffer = t;
     }
 
+    // Method to limit the number of results in the query
     limit = (t) => {
         return this.size = t, this;
     }
 
+    // Method to select specific fields in the query
     select = (t) => {
         this.options = t;
         "string" == typeof t && "*" !== t && (this.options = t.split(","));
@@ -263,11 +309,13 @@ class Query {
         return this;
     }
 
+    // Method to set the focused field for filtering
     where = (t) => {
         this.focused_field = t;
         return this;
     }
 
+    // Method to filter data based on partial string match
     contains = (t, i) => {
         let s = this.buffer;
         this.buffer = [];
@@ -275,6 +323,7 @@ class Query {
         return this;
     }
 
+    // Method to filter data based on regular expression match
     match = (t, i) => {
         if ("string" == typeof t && "" !== t) {
             i = i || "ig";
@@ -286,6 +335,7 @@ class Query {
         return this;
     }
 
+    // Method to filter data based on exact match
     equalTo = (t) => {
         let i = this.buffer;
         this.buffer = [];
@@ -293,13 +343,15 @@ class Query {
         return this;
     }
 
-    in = (t) => {
+    // Method to filter data based on an array of values
+    whereIn = (t) => {
         let i = this.buffer;
         this.buffer = [];
         for (let s in i) this.in_array(i[s][this.focused_field], t) && this.buffer.push(i[s]);
         return this;
     }
 
+    // Method to filter data based on numeric comparison (greater than)
     moreThan = (t) => {
         let i = this.buffer;
         this.buffer = [];
@@ -307,6 +359,7 @@ class Query {
         return this;
     }
 
+    // Method to filter data based on numeric comparison (greater than or equal to)
     moreThanOrEqualTo = (t) => {
         let i = this.buffer;
         this.buffer = [];
@@ -314,6 +367,7 @@ class Query {
         return this;
     }
 
+    // Method to filter data based on numeric comparison (less than)
     lessThan = (t) => {
         let i = this.buffer;
         this.buffer = [];
@@ -321,6 +375,7 @@ class Query {
         return this;
     }
 
+    // Method to filter data based on numeric comparison (less than or equal to)
     lessThanOrEqualTo = (t) => {
         let i = this.buffer;
         this.buffer = [];
@@ -328,6 +383,7 @@ class Query {
         return this;
     }
 
+    // Method to order the results based on a specified field and order
     orderBy = (t, i) => {
         let s = "asc",
             r = t.split(" "),
@@ -349,9 +405,11 @@ class Query {
         return this;
     }
 
+    // Alias methods for query building
     and = this.where;
     is = this.equalTo;
 
+    // Helper function to check if a value is in an array
     in_array = (t, i) => {
         for (let s in i) if (t == i[s]) return true;
         return false;
