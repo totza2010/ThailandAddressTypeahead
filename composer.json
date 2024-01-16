@@ -1,0 +1,7 @@
+{
+    "name": "totza2010/thailand-address-typeahead",
+    "description": "ตัวช่วยกรอกข้อมูลจังหวัด อำเภอ ตำบล ของประเทศไทย",
+    "require": {
+        "corejavascript/typeahead.js": "1.*"
+    }
+}
